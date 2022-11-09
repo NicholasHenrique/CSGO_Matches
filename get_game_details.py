@@ -3,6 +3,8 @@ import os
 import json
 from delta import *
 
+import api_key
+
 import findspark
 findspark.init()
 
@@ -18,9 +20,9 @@ spark = configure_spark_with_delta_pip(builder) \
         .getOrCreate()
 
 def get_data(gameId):
-  api_key = "dedaad020f8d43b2aafcb7d1460a1f4b"
+  API_KEY = api_key.API_KEY
   url = f"https://api.sportsdata.io/v3/csgo/stats/json/BoxScore/{gameId}"
-  response = requests.get(url, headers={"Ocp-Apim-Subscription-Key": f"{api_key}"})
+  response = requests.get(url, headers={"Ocp-Apim-Subscription-Key": f"{API_KEY}"})
   return response.json()
 
 def get_and_land_game_details(gameId):

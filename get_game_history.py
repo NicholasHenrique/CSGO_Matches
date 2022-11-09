@@ -10,6 +10,8 @@ from datetime import datetime, timedelta, date
 import sys
 import os
 
+import api_key
+
 spark = SparkSession.builder \
     .appName("CSGO_Matches") \
     .master('local[*]') \
@@ -49,9 +51,9 @@ schema = StructType([
 ])
 
 def get_data(date):
-  api_key = "dedaad020f8d43b2aafcb7d1460a1f4b"
+  API_KEY = api_key.API_KEY
   url = f"https://api.sportsdata.io/v3/csgo/scores/json/GamesByDate/{date}"
-  response = requests.get(url, headers={"Ocp-Apim-Subscription-Key": f"{api_key}"})
+  response = requests.get(url, headers={"Ocp-Apim-Subscription-Key": f"{API_KEY}"})
   return response.json()
 
 def get_min_match_date(df):
