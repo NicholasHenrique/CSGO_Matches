@@ -95,3 +95,4 @@ stream = ( df_stream.writeStream
 
 stream.processAllAvailable()
 stream.stop()
+spark.stop()
