@@ -1,11 +1,10 @@
-from pyspark.sql.types import StructType, StructField, IntegerType, StringType, BooleanType, FloatType
-from pyspark.sql import functions as F
-import json
-
 import findspark
 findspark.init()
 
+import json
 from pyspark.sql import SparkSession
+from pyspark.sql.types import StructType, StructField, IntegerType, StringType, BooleanType, FloatType
+from pyspark.sql import functions as F
 
 spark = SparkSession.builder \
     .appName("CSGO_Matches") \
@@ -53,14 +52,6 @@ map_schema = StructType([
     StructField("TeamAScore", IntegerType(), True),
     StructField("TeamBScore", IntegerType(), True),
 ])
-
-# map_name = list(match[0].items())[1][1][0]['Name']
-# leaderboards = [dict(item, **{'MapName':f'{map_name}'}) for item in list(match[0].items())[1][1][0]['Leaderboards']]
-
-# df = spark.createDataFrame(leaderboards, schema=leaderboards_schema)
-# df.show()
-
-# o lógico seria estar vindo mais de um mapa quando fosse Bo3, mas sempre vem 1
 
 def get_match(gameId):
   '''

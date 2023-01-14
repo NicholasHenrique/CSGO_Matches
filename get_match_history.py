@@ -1,16 +1,14 @@
 import findspark
 findspark.init()
 
-from pyspark.sql import SparkSession
-
+import api_key
 import requests
+import sys
+import os
+from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.types import StructType, StructField, IntegerType, StringType, DecimalType, BooleanType
 from datetime import datetime, timedelta, date
-import sys
-import os
-
-import api_key
 
 spark = SparkSession.builder \
     .appName("CSGO_Matches") \

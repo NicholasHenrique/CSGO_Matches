@@ -1,8 +1,11 @@
+import findspark
+findspark.init()
+
+import delta
+import os
 from pyspark.sql.types import StructType, StructField, IntegerType, StringType, BooleanType, FloatType
 from pyspark.sql import SparkSession, window
 from pyspark.sql import functions as F
-import delta
-import os
 from os.path import abspath
 
 def upsertToDelta(df, batchId):
@@ -31,7 +34,6 @@ builder = SparkSession.builder \
 
 spark = delta.configure_spark_with_delta_pip(builder) \
         .getOrCreate()
-
 
 leaderboards_schema = StructType([
     StructField("PlayerId", IntegerType(), False),
@@ -92,11 +94,9 @@ try:
       df = spark.read.parquet(f"raw/{TABLE_NAME}")
       windowSpec = window.Window.partitionBy("GameId").orderBy("UpdatedUtc") # .orderBy(1)
       df_new = df.withColumn("row_number", F.row_number().over(windowSpec)).filter("row_number = 1").drop("row_number")
-      df_new.write.format("delta").saveAsTable(name=f"{warehouse_location}.bronze.{TABLE_NAME}", mode="overwrite") # overwrite não está sobreescrevendo pois quando o comando é executado ele atribui um novo nome para o arquivo (?)
+      df_new.write.mode("overwrite").format("delta").saveAsTable(f"bronze.{TABLE_NAME}") # overwriting it's not overwrititng because it creates a different file name
+      # df_new.write.format("delta").saveAsTable(name=f"{warehouse_location}.bronze.{TABLE_NAME}", mode="overwrite")
       # df_new.write.mode("overwrite").format("delta").saveAsTable(f"bronze.{TABLE_NAME}")
-      # df_new.distinct().count()
-
-      # na primeira execução, ele não está lendo o arquivo existente na bronze, então ele adiciona todos os dados novos únicos
 
     bronzeDeltaTable = delta.tables.DeltaTable.forPath(spark, f"spark-warehouse/bronze.db/{TABLE_NAME}") #"bronze"
 
@@ -118,7 +118,5 @@ try:
 
     stream.processAllAvailable()
     stream.stop()
-except:
-  stream.stop()
 finally:
   spark.stop()

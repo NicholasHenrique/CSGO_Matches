@@ -1,13 +1,11 @@
+import findspark
+findspark.init()
+
+import api_key
 import requests
 import os
 import json
 from delta import *
-
-import api_key
-
-import findspark
-findspark.init()
-
 from pyspark.sql import SparkSession
 
 builder = SparkSession.builder \

@@ -1,8 +1,11 @@
+import findspark
+findspark.init()
+
+import os
+import delta
 from pyspark.sql.types import StructType, StructField, IntegerType, StringType, DecimalType, BooleanType
 from pyspark.sql import SparkSession, window
 from pyspark.sql import functions as F
-import delta
-import os
 
 def upsertToDelta(df, batchId):
   '''
@@ -76,20 +79,11 @@ if TABLE_NAME not in os.listdir('spark-warehouse/bronze.db'):
   The GameId is used as a group by and UpdatedUtc is used as an order by.
   If it's found a duplicated match, the duplicate will be not be saved.
   '''
-  # In first execution, it's not reading the existing file in bronze, so it saves all new unique matches
   windowSpec = window.Window.partitionBy("GameId").orderBy("UpdatedUtc")
   df_new = df.withColumn("row_number", F.row_number().over(windowSpec)).filter("row_number = 1").drop("row_number")
-  df_new.write.mode("overwrite").format("delta").saveAsTable(f"bronze.{TABLE_NAME}") # overwrite não está sobreescrevendo pois quando o comando é executado ele atribui um novo nome para o arquivo (?)
-
+  df_new.write.mode("overwrite").format("delta").saveAsTable(f"bronze.{TABLE_NAME}") # overwriting it's not overwrititng because it creates a different file name
 
 bronzeDeltaTable = delta.tables.DeltaTable.forPath(spark, f"spark-warehouse/bronze.db/{TABLE_NAME}")
-
-# df_stream = ( spark.readStream
-#                    .format("cloudFiles")
-#                    .option("cloudFiles.format", "json")
-#                    .schema(schema)
-#                    .load("raw/csgo_match_history")
-#             )
 
 '''
 When new matches lands in raw, a stream is responsible for saving these new matches in bronze.
