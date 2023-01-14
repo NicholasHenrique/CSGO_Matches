@@ -22,7 +22,7 @@ To garantee that in a table only exists distinct matches and the last version of
 
 All tables in [bronze][14] are stored in [Delta][15] format.
 
-[1]: #https://sportsdata.io/developers/api-documentation/csgo
+[1]: https://sportsdata.io/developers/api-documentation/csgo
 [2]: #/raw/csgo_match_history/
 [3]: #/get_match_history.py
 [4]: #/raw/csgo_match_history/
@@ -36,7 +36,7 @@ All tables in [bronze][14] are stored in [Delta][15] format.
 [12]: #/match_stream.py
 [13]: #/spark-warehouse/bronze.db/csgo_match_history/
 [14]: #/spark-warehouse/bronze.db/
-[15]: #https://delta.io/
+[15]: https://delta.io/
 [16]: #/match_details_stream.py
 [17]: #/spark-warehouse/bronze.db/tb_leaderboards/
 [18]: #/spark-warehouse/bronze.db/tb_maps/
