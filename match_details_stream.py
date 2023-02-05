@@ -14,7 +14,7 @@ def upsertToDelta(df, batchId):
   The GameId is used as a group by and UpdatedUtc is used as an order by.
   If it's found a duplicated match, the duplicate will be not be saved.
   '''
-  windowSpec = window.Window.partitionBy("GameId").orderBy("UpdatedUtc") # .orderBy(1)
+  windowSpec = window.Window.partitionBy("GameId").orderBy(F.lit(1)) # .orderBy(F.lit(1)) .orderBy("UpdatedUtc")
   df_new = df.withColumn("row_number", F.row_number().over(windowSpec)).filter("row_number = 1")
 
   ( bronzeDeltaTable.alias("bronze")
@@ -24,16 +24,18 @@ def upsertToDelta(df, batchId):
                     .execute()
   )
 
-warehouse_location = abspath('spark-warehouse')
+warehouse_location = abspath('spark-warehouse').replace('c', 'C')
 
 builder = SparkSession.builder \
     .master('local[*]') \
-    .config("spark.sql.warehouse.dir", warehouse_location) \
     .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
     .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+    # .config("spark.sql.warehouse.dir", warehouse_location) \
 
 spark = delta.configure_spark_with_delta_pip(builder) \
         .getOrCreate()
+
+# spark.conf.set("spark.local.dir", "/tmp/spark-temp")
 
 leaderboards_schema = StructType([
     StructField("PlayerId", IntegerType(), False),
@@ -66,6 +68,7 @@ leaderboards_schema = StructType([
     StructField("Clutch1v3s", FloatType(), True),
     StructField("Clutch1v4s", FloatType(), True),
     StructField("Clutch1v5s", FloatType(), True),
+    StructField("MapName", StringType(), False)
 ])
 
 map_schema = StructType([
@@ -75,6 +78,11 @@ map_schema = StructType([
     StructField("CurrentRound", IntegerType(), True),
     StructField("TeamAScore", IntegerType(), True),
     StructField("TeamBScore", IntegerType(), True),
+    StructField("GameId", IntegerType(), False),
+    StructField("TeamAName", StringType(), True),
+    StructField("TeamBName", StringType(), True),
+    StructField("TeamAKey", StringType(), True),
+    StructField("TeamBKey", StringType(), True)
 ])
 
 SCHEMAS = {
@@ -92,9 +100,11 @@ try:
     '''
     if TABLE_NAME not in os.listdir('spark-warehouse/bronze.db'):
       df = spark.read.parquet(f"raw/{TABLE_NAME}")
-      windowSpec = window.Window.partitionBy("GameId").orderBy("UpdatedUtc") # .orderBy(1)
+      windowSpec = window.Window.partitionBy("GameId").orderBy(F.lit(1)) # .orderBy(F.lit(1)) .orderBy("UpdatedUtc")
       df_new = df.withColumn("row_number", F.row_number().over(windowSpec)).filter("row_number = 1").drop("row_number")
-      df_new.write.mode("overwrite").format("delta").saveAsTable(f"bronze.{TABLE_NAME}") # overwriting it's not overwrititng because it creates a different file name
+      # df_new.write.mode("overwrite").format("delta").save(f"bronze.{TABLE_NAME}") # overwriting it's not overwrititng because it creates a different file name
+      df_new.write.mode("overwrite").format("delta").save(f"spark-warehouse/bronze.db/{TABLE_NAME}")
+      # df_new.write.mode("overwrite").format("delta").save(f"{warehouse_location}\\bronze.db\\{TABLE_NAME}")
       # df_new.write.format("delta").saveAsTable(name=f"{warehouse_location}.bronze.{TABLE_NAME}", mode="overwrite")
       # df_new.write.mode("overwrite").format("delta").saveAsTable(f"bronze.{TABLE_NAME}")
 
