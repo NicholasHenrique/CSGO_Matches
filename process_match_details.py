@@ -1,5 +1,5 @@
-import findspark
-findspark.init()
+# import findspark
+# findspark.init()
 
 import json
 from pyspark.sql import SparkSession

@@ -1,5 +1,5 @@
-import findspark
-findspark.init()
+# import findspark
+# findspark.init()
 
 import api_key
 import requests

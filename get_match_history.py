@@ -1,5 +1,5 @@
-import findspark
-findspark.init()
+# import findspark
+# findspark.init()
 
 import api_key
 import requests
@@ -9,6 +9,7 @@ from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.types import StructType, StructField, IntegerType, StringType, DecimalType, BooleanType
 from datetime import datetime, timedelta, date
+import traceback
 
 spark = SparkSession.builder \
     .appName("CSGO_Matches") \
@@ -58,6 +59,8 @@ def get_match(date):
   API_KEY = api_key.API_KEY
   url = f"https://api.sportsdata.io/v3/csgo/scores/json/GamesByDate/{date}"
   response = requests.get(url, headers={"Ocp-Apim-Subscription-Key": f"{API_KEY}"})
+  if response.json():
+    print(f'Partida(s) do dia {date} coletada(s)')
   return response.json()
 
 def get_min_match_date(df):
@@ -77,7 +80,7 @@ def save_match_list(df):
   '''
   Saves in raw the match in json format sent by API.
   '''
-  df.coalesce(1).write.format("json").mode("append").save("raw/csgo_match_history")
+  df.coalesce(1).write.format("json").mode("append").save("raw\\csgo_match_history")
 
 def get_history_matches():
   '''
@@ -108,8 +111,9 @@ def get_new_matches():
   while max_date <= today:
     max_date = (datetime.strptime(max_date,'%Y-%m-%d') + timedelta(days=1)).strftime('%Y-%m-%d')
     match = get_match(date=max_date)
-    df_match = spark.createDataFrame(match, schema=schema)
-    save_match_list(df_match)
+    if match:
+      df_match = spark.createDataFrame(match, schema=schema)
+      save_match_list(df_match)
 
 def first_load(date):
   '''
@@ -131,7 +135,7 @@ if __name__ == '__main__':
   If "new" option is passed, the code will collect new matches from the most recent match stored to the most recent match according to the day the code was executed.
   But if there are no matches stored, it'll collect the most recent matches based on the code execution day.
 
-  If "history" option is passed, the code will collect matches form the last 7 days according to the oldest match stored.
+  If "history" option is passed, the code will collect matches from the last 7 days according to the oldest match stored.
   If "new" option is passed, the code will collect new matches from the most recent match stored to the most recent match according to the day the code was executed. And after that, it'll collect matches form the last 7 days according to the oldest match stored.
   '''
   try:
@@ -147,9 +151,18 @@ if __name__ == '__main__':
           today = date.today().strftime('%Y-%m-%d')
           first_load(today)
         get_history_matches()
+      # TODO: para o match_stream.py ter sentido na parte que o código filtra as partidas para que não sejam inseridas informações duplicadas na bronze,
+      #   criar os cases 'date', para que seja possível passar uma data específica, e 'range', para que seja possível passar um range de datas específicas
       case _:
-        print("Invalid argument.")
-  except:
-    print("Argument not passed.")
+        print("Argumento inválido.")
+  except IndexError:
+    print("Argumento não foi passado.")
+  except Exception as e:
+    # print(f"ERRO: {repr(e)}")
+    traceback.print_exc()
+    # e_type, e_object, e_traceback = sys.exc_info()
+    # print(f'exception filename: {os.path.split(e_traceback.tb_frame.f_code.co_filename)[1]}')
+    # print(f'exception line number: {e_traceback.tb_lineno}')
+    # print(f'exception message: {repr(e)}')
 
 spark.stop()

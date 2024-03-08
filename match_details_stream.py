@@ -1,5 +1,8 @@
-import findspark
-findspark.init()
+"""
+como o match_stream.py salva na bronze partidas únicas, então de acordo com o funcionamento do get_match_details.py,
+não haverá partidas duplicadas em raw/matches_proceeded e, portanto, não haverá partidas duplicadas em raw/tb_maps e raw/tb_leaderboards,
+logo não há a necessidade de criar uma window para que só pegue as partidas únicas em raw/tb_maps e raw/tb_leaderboards
+"""
 
 import delta
 import os
@@ -102,6 +105,9 @@ try:
       df = spark.read.parquet(f"raw/{TABLE_NAME}")
       windowSpec = window.Window.partitionBy("GameId").orderBy(F.lit(1)) # .orderBy(F.lit(1)) .orderBy("UpdatedUtc")
       df_new = df.withColumn("row_number", F.row_number().over(windowSpec)).filter("row_number = 1").drop("row_number")
+
+      # TODO: verificar o que está acontecendo aqui, provavelmente não está sendo possível salvar as novas tabelas dentro do database bronze, que provavelmente este seja o erro do projeto que me travou e me fez parar
+
       # df_new.write.mode("overwrite").format("delta").save(f"bronze.{TABLE_NAME}") # overwriting it's not overwrititng because it creates a different file name
       df_new.write.mode("overwrite").format("delta").save(f"spark-warehouse/bronze.db/{TABLE_NAME}")
       # df_new.write.mode("overwrite").format("delta").save(f"{warehouse_location}\\bronze.db\\{TABLE_NAME}")
