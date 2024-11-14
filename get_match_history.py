@@ -1,6 +1,3 @@
-# import findspark
-# findspark.init()
-
 import api_key
 import requests
 import sys
@@ -61,6 +58,8 @@ def get_match(date):
   response = requests.get(url, headers={"Ocp-Apim-Subscription-Key": f"{API_KEY}"})
   if response.json():
     print(f'Partida(s) do dia {date} coletada(s)')
+  else:
+    print(f'Não há partida(s) no dia {date}')
   return response.json()
 
 def get_min_match_date(df):
@@ -80,7 +79,7 @@ def save_match_list(df):
   '''
   Saves in raw the match in json format sent by API.
   '''
-  df.coalesce(1).write.format("json").mode("append").save("raw\\csgo_match_history")
+  df.coalesce(1).write.format("json").mode("append").save("raw/csgo_match_history")
 
 def get_history_matches():
   '''
@@ -128,6 +127,30 @@ def first_load(date):
   df_match = spark.createDataFrame(match, schema=schema)
   save_match_list(df_match)
 
+def load_date(date):
+  '''
+  Function to load matches from a specific date.
+  '''
+  match = get_match(date=date)
+  if match:
+    df_match = spark.createDataFrame(match, schema=schema)
+    save_match_list(df_match)
+
+def is_valid_date(date_string):
+    try:
+        datetime.strptime(date_string, '%Y-%m-%d')
+        return True
+    except ValueError:
+        return False
+    
+def load_range_date(date1, date2):
+  while date1 <= date2:
+    match = get_match(date=date1)
+    if match:
+      df_match = spark.createDataFrame(match, schema=schema)
+      save_match_list(df_match)
+    date1 = (datetime.strptime(date1,'%Y-%m-%d') + timedelta(days=1)).strftime('%Y-%m-%d')
+
 if __name__ == '__main__':
   '''
   When this function is directly called, a parameter with two options ("new" or "history") determines the code execution.
@@ -136,7 +159,11 @@ if __name__ == '__main__':
   But if there are no matches stored, it'll collect the most recent matches based on the code execution day.
 
   If "history" option is passed, the code will collect matches from the last 7 days according to the oldest match stored.
-  If "new" option is passed, the code will collect new matches from the most recent match stored to the most recent match according to the day the code was executed. And after that, it'll collect matches form the last 7 days according to the oldest match stored.
+  But if there are no matches stored, it'll collect the most recent matches based on the code execution day. And after that, it will collect matches from the last 7 days according to the oldest match stored.
+
+  If "date" option is passed, it expects a date in format "%YYYY-%mm-%dd" as another argument, so it tries to collect matches of that day.
+
+  If "range" option is passed, it expects two dates in format "%YYYY-%mm-%dd" as others arguments, so it tries to collect matches between those dates. The first date must be before the second date.
   '''
   try:
     match sys.argv[1]:
@@ -151,18 +178,33 @@ if __name__ == '__main__':
           today = date.today().strftime('%Y-%m-%d')
           first_load(today)
         get_history_matches()
-      # TODO: para o match_stream.py ter sentido na parte que o código filtra as partidas para que não sejam inseridas informações duplicadas na bronze,
-      #   criar os cases 'date', para que seja possível passar uma data específica, e 'range', para que seja possível passar um range de datas específicas
+      case "date":
+        try: 
+          _date = sys.argv[2]
+          if is_valid_date(_date):
+            load_date(_date)
+          else:
+            print("Data inválida.")
+        except IndexError:
+          print("Argumento de data não foi passado.")
+      case "range":
+        try:
+          date1 = sys.argv[2]
+          date2 = sys.argv[3]
+          if is_valid_date(date1) and is_valid_date(date2):
+            if (datetime.strptime(date1, "%Y-%m-%d") < datetime.strptime(date2, "%Y-%m-%d")):
+              load_range_date(date1, date2)
+            else:
+              print("Data(s) inválida(s).")
+          else:
+            print("Data(s) inválida(s).")
+        except IndexError:
+          print("Argumento (s) de data(s) não foi(foram) passada(s).")
       case _:
         print("Argumento inválido.")
   except IndexError:
     print("Argumento não foi passado.")
   except Exception as e:
-    # print(f"ERRO: {repr(e)}")
     traceback.print_exc()
-    # e_type, e_object, e_traceback = sys.exc_info()
-    # print(f'exception filename: {os.path.split(e_traceback.tb_frame.f_code.co_filename)[1]}')
-    # print(f'exception line number: {e_traceback.tb_lineno}')
-    # print(f'exception message: {repr(e)}')
 
 spark.stop()
