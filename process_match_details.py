@@ -1,6 +1,3 @@
-# import findspark
-# findspark.init()
-
 import json
 from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType, StructField, IntegerType, StringType, BooleanType, FloatType
