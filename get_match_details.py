@@ -39,6 +39,9 @@ def get_and_land_match_details(gameId):
         data_str = json.dumps(data)
         file.write(data_str)
       spark.createDataFrame([{"gameId": gameId, "path": path}]).write.format("parquet").mode("append").save("raw/matches_proceeded") #.format("delta")
+    """
+    se a partida for salva no bronze mas a partida ainda estiver acontecendo, os detalhes da partida não serão atualizados quando a partida terminar, pois já vai ter um registro da partida salvo em raw/matches_proceeded
+    """
 
 def get_match_ids():
   '''
