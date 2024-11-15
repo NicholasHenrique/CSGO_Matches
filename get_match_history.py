@@ -168,13 +168,13 @@ if __name__ == '__main__':
   try:
     match sys.argv[1]:
       case "new":
-        if "raw/csgo_match_history" not in os.listdir():
+        if not os.path.isdir("raw/csgo_match_history"):
           today = date.today().strftime('%Y-%m-%d')
           first_load(today)
         else:
           get_new_matches()
       case "history":
-        if "raw/csgo_match_history" not in os.listdir():
+        if not os.path.isdir("raw/csgo_match_history"):
           today = date.today().strftime('%Y-%m-%d')
           first_load(today)
         get_history_matches()
