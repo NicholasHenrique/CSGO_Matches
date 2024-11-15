@@ -1,6 +1,3 @@
-# import findspark
-# findspark.init()
-
 import api_key
 import requests
 import os
@@ -32,11 +29,11 @@ def get_and_land_match_details(gameId):
   '''
   data = get_match_details(gameId)
   if data:
-    if "matches_landing" not in os.listdir("raw"): # talvez nao seja necessario
+    if "matches_landing" not in os.listdir("raw"):
       os.mkdir("raw/matches_landing")
     path = f"raw/matches_landing/{gameId}.json"
     if path not in os.listdir("raw/matches_landing"):
-      if "matches_proceeded" not in os.listdir("raw"): # talvez nao seja necessario
+      if "matches_proceeded" not in os.listdir("raw"):
         os.mkdir("raw/matches_proceeded")
       with open(path, "w") as file:
         data_str = json.dumps(data)
