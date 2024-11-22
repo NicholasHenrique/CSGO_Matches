@@ -47,73 +47,74 @@ map_schema = StructType([
     StructField("Status", StringType(), True),
     StructField("CurrentRound", IntegerType(), True),
     StructField("TeamAScore", IntegerType(), True),
-    StructField("TeamBScore", IntegerType(), True),
+    StructField("TeamBScore", IntegerType(), True)
 ])
 
 def get_match(gameId):
-  '''
-  Get match details stored in raw/matches_landing.
-  '''
-  path = f"raw/matches_landing/{gameId}.json"
-  return json.load(open(path, 'r'))
+    '''
+    Get match details stored in raw/matches_landing.
+    '''
+    path = f"raw/matches_landing/{gameId}.json"
+    return json.load(open(path, 'r'))
 
 def save_df(df, table):
-  '''
-  Save dataframe to its corresponding table.
-  '''
-  (
-    df.coalesce(1)
-      .write
-      .mode("append")
-      .format("parquet")
-      .save(f"raw/{table}")
-  )
+    '''
+    Save dataframe to its corresponding table.
+    '''
+    (
+        df.coalesce(1)
+            .write
+            .mode("append")
+            .format("parquet")
+            .save(f"raw/{table}")
+    )
 
 def create_leaderboards_map_df(match):
-  '''
-  Create leaderboards dataframe.
-  '''
-  maps = list(match[0].items())[1][1]
-  leaderboards = maps[0]['Leaderboards']
-  map_name = maps[0]['Name']
-  df_leaderboards = spark.createDataFrame(leaderboards, schema=leaderboards_schema)
-  df_leaderboards = df_leaderboards.withColumn("MapName", F.lit(map_name))
-  save_df(df_leaderboards, "tb_leaderboards")
+    '''
+    Create leaderboards dataframe.
+    '''
+    maps = list(match[0].items())[1][1]
+    for i in range(len(maps)):
+        leaderboards = maps[i]['Leaderboards']
+        map_name = maps[i]['Name']
+        df_leaderboards = spark.createDataFrame(leaderboards, schema=leaderboards_schema)
+        df_leaderboards = df_leaderboards.withColumn("MapName", F.lit(map_name))
+        save_df(df_leaderboards, "tb_leaderboards")
 
 def create_maps_df(match):
-  '''
-  Create maps dataframe.
-  '''
-  maps = list(match[0].items())[1][1]
-  game = list(match[0].items())[0][1]
-  gameId = game['GameId']
-  teamAName = game['TeamAName']
-  teamBName = game['TeamBName']
-  teamAKey = game['TeamAKey']
-  teamBKey = game['TeamBKey']
-  df_maps = spark.createDataFrame(maps, schema=map_schema)
-  df_maps = df_maps.withColumn("GameId", F.lit(gameId)).withColumn("TeamAName", F.lit(teamAName)).withColumn("TeamBName", F.lit(teamBName)).withColumn("TeamAKey", F.lit(teamAKey)).withColumn("TeamBKey", F.lit(teamBKey))
-  save_df(df_maps, "tb_maps")
+    '''
+    Create maps dataframe.
+    '''
+    maps = list(match[0].items())[1][1]
+    game = list(match[0].items())[0][1]
+    gameId = game['GameId']
+    teamAName = game['TeamAName']
+    teamBName = game['TeamBName']
+    teamAKey = game['TeamAKey']
+    teamBKey = game['TeamBKey']
+    df_maps = spark.createDataFrame(maps, schema=map_schema)
+    df_maps = df_maps.withColumn("GameId", F.lit(gameId)).withColumn("TeamAName", F.lit(teamAName)).withColumn("TeamBName", F.lit(teamBName)).withColumn("TeamAKey", F.lit(teamAKey)).withColumn("TeamBKey", F.lit(teamBKey))
+    save_df(df_maps, "tb_maps")
 
 def process_game(gameId):
-  '''
-  Collect match details and save corresponding dataframes.
-  '''
-  match = get_match(gameId)
-  create_leaderboards_map_df(match)
-  create_maps_df(match)
+    '''
+    Collect match details and save corresponding dataframes.
+    '''
+    match = get_match(gameId)
+    create_leaderboards_map_df(match)
+    create_maps_df(match)
 
 def get_ids():
-  '''
-  Read stored match details ids in raw/matches_proceeded and compare raw/tb_maps to return match ids that have not yet been processed.
-  '''
-  df_proceeded = spark.read.parquet("raw/matches_proceeded") #.read.format("delta").load("raw/matches_proceeded")
-  try:
-    df_maps = spark.read.parquet("raw/tb_maps")
-    df_join = df_proceeded.join(df_maps, "gameId", "left").filter("Status is null")
-    return df_join.select("gameId")
-  except:
-    return df_proceeded.select("gameId")
+    '''
+    Read stored match details ids in raw/matches_proceeded and compare raw/tb_maps to return match ids that have not yet been processed.
+    '''
+    df_proceeded = spark.read.parquet("raw/matches_proceeded") #.read.format("delta").load("raw/matches_proceeded")
+    try:
+        df_maps = spark.read.parquet("raw/tb_maps")
+        df_join = df_proceeded.join(df_maps, "gameId", "left").filter("Status is null")
+        return df_join.select("gameId")
+    except:
+        return df_proceeded.select("gameId")
 
 game_ids = get_ids()
 for i in game_ids.collect():
