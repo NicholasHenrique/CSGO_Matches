@@ -6,24 +6,26 @@ from pyspark.sql import functions as F
 from pyspark.sql.functions import col, to_timestamp, regexp_replace
 
 def upsertToDelta(df, batchId):
-  '''
-  In order to guarantee there aren't any duplicated matches, a Window is used to filter matches based on its GameId and UpdatedUtc.
-  The GameId is used as a group by and UpdatedUtc is used as an order by.
-  If it's found a duplicated match, the duplicate will be not be saved.
-  '''
-  windowSpec = window.Window.partitionBy("GameId").orderBy(col("UpdatedUtc").desc())
-  df_new = df.withColumn("row_number", F.row_number().over(windowSpec)).filter("row_number = 1")
-  df_new = df_new.withColumn("Day", to_timestamp(regexp_replace("Day", 'T', ' '), 'yyyy-MM-dd HH:mm:ss')) \
-                   .withColumn("DateTime", to_timestamp(regexp_replace("DateTime", 'T', ' '), 'yyyy-MM-dd HH:mm:ss')) \
-                   .withColumn("Updated", to_timestamp(regexp_replace("Updated", 'T', ' '), 'yyyy-MM-dd HH:mm:ss')) \
-                   .withColumn("UpdatedUtc", to_timestamp(regexp_replace("UpdatedUtc", 'T', ' '), 'yyyy-MM-dd HH:mm:ss'))
+    '''
+    In order to guarantee there aren't any duplicated matches, a Window is used to filter matches based on its GameId and UpdatedUtc.
+    The GameId is used as a group by and UpdatedUtc is used as an order by.
+    If it's found a duplicated match, the duplicate will be not be saved.
+    It also transforms timestamp columns into valid formats.
+    '''
+    df = df.filter(F.col("IsClosed") == True)
+    windowSpec = window.Window.partitionBy("GameId").orderBy(col("UpdatedUtc").desc())
+    df_new = df.withColumn("row_number", F.row_number().over(windowSpec)).filter("row_number = 1")
+    df_new = df_new.withColumn("Day", to_timestamp(regexp_replace("Day", 'T', ' '), 'yyyy-MM-dd HH:mm:ss')) \
+                    .withColumn("DateTime", to_timestamp(regexp_replace("DateTime", 'T', ' '), 'yyyy-MM-dd HH:mm:ss')) \
+                    .withColumn("Updated", to_timestamp(regexp_replace("Updated", 'T', ' '), 'yyyy-MM-dd HH:mm:ss')) \
+                    .withColumn("UpdatedUtc", to_timestamp(regexp_replace("UpdatedUtc", 'T', ' '), 'yyyy-MM-dd HH:mm:ss'))
 
-  ( bronzeDeltaTable.alias("bronze")
-                    .merge(df_new.alias("raw"), "bronze.GameId = raw.GameId")
-                    .whenMatchedUpdateAll()
-                    .whenNotMatchedInsertAll()
-                    .execute()
-  )
+    ( bronzeDeltaTable.alias("bronze")
+                        .merge(df_new.alias("raw"), "bronze.GameId = raw.GameId")
+                        .whenMatchedUpdateAll()
+                        .whenNotMatchedInsertAll()
+                        .execute()
+    )
 
 warehouse_location = os.path.abspath('spark-warehouse')
 
@@ -78,41 +80,43 @@ spark.sql("CREATE DATABASE IF NOT EXISTS bronze")
 Full load
 '''
 if TABLE_NAME not in os.listdir('spark-warehouse/bronze.db'):
-  df = spark.read.schema(match_schema).format("json").load(f"raw/{TABLE_NAME}")
-  '''
-  In order to guarantee there aren't any duplicated matches, a Window is used to filter matches based on its GameId and UpdatedUtc.
-  The GameId is used as a group by and UpdatedUtc is used as an order by.
-  If it's found a duplicated match, the duplicate will be not be saved.
-  '''
-  windowSpec = window.Window.partitionBy("GameId").orderBy(col("UpdatedUtc").desc())
-  df_new = df.withColumn("row_number", F.row_number().over(windowSpec)).filter("row_number = 1").drop("row_number")
-  df_new = df_new.withColumn("Day", to_timestamp(regexp_replace("Day", 'T', ' '), 'yyyy-MM-dd HH:mm:ss')) \
-                   .withColumn("DateTime", to_timestamp(regexp_replace("DateTime", 'T', ' '), 'yyyy-MM-dd HH:mm:ss')) \
-                   .withColumn("Updated", to_timestamp(regexp_replace("Updated", 'T', ' '), 'yyyy-MM-dd HH:mm:ss')) \
-                   .withColumn("UpdatedUtc", to_timestamp(regexp_replace("UpdatedUtc", 'T', ' '), 'yyyy-MM-dd HH:mm:ss'))
-  df_new.write.mode("overwrite").format("delta").saveAsTable(f"bronze.{TABLE_NAME}") # overwriting it's not overwrititng because it creates a different file name
+    df = spark.read.schema(match_schema).format("json").load(f"raw/{TABLE_NAME}")
+    df = df.filter(F.col("IsClosed") == True)
+    '''
+    In order to guarantee there aren't any duplicated matches, a Window is used to filter matches based on its GameId and UpdatedUtc.
+    The GameId is used as a group by and UpdatedUtc is used as an order by.
+    If it's found a duplicated match, the duplicate will be not be saved.
+    It also transforms timestamp columns into valid formats.
+    '''
+    windowSpec = window.Window.partitionBy("GameId").orderBy(col("UpdatedUtc").desc())
+    df_new = df.withColumn("row_number", F.row_number().over(windowSpec)).filter("row_number = 1").drop("row_number")
+    df_new = df_new.withColumn("Day", to_timestamp(regexp_replace("Day", 'T', ' '), 'yyyy-MM-dd HH:mm:ss')) \
+                    .withColumn("DateTime", to_timestamp(regexp_replace("DateTime", 'T', ' '), 'yyyy-MM-dd HH:mm:ss')) \
+                    .withColumn("Updated", to_timestamp(regexp_replace("Updated", 'T', ' '), 'yyyy-MM-dd HH:mm:ss')) \
+                    .withColumn("UpdatedUtc", to_timestamp(regexp_replace("UpdatedUtc", 'T', ' '), 'yyyy-MM-dd HH:mm:ss'))
+    df_new.write.mode("overwrite").format("delta").saveAsTable(f"bronze.{TABLE_NAME}") # overwriting it's not overwrititng because it creates a different file name
 else:
-  bronzeDeltaTable = delta.tables.DeltaTable.forPath(spark, f"spark-warehouse/bronze.db/{TABLE_NAME}")
+    bronzeDeltaTable = delta.tables.DeltaTable.forPath(spark, f"spark-warehouse/bronze.db/{TABLE_NAME}")
 
-  '''
-  When new matches lands in raw, a stream is responsible for saving these new matches in bronze.
-  '''
-  df_stream = ( spark.readStream
-                    .format("json")
-                    .schema(match_schema)
-                    .load(f"raw/{TABLE_NAME}")
-              )
+    '''
+    When new matches lands in raw, a stream is responsible for saving these new matches in bronze.
+    '''
+    df_stream = ( spark.readStream
+                        .format("json")
+                        .schema(match_schema)
+                        .load(f"raw/{TABLE_NAME}")
+                )
 
-  stream = ( df_stream.writeStream
-                      .foreachBatch(upsertToDelta)
-                      .option("checkpointLocation", f"spark-warehouse/bronze.db/{TABLE_NAME}_checkpoint")
-                      .outputMode("update")
-                      .start()
-          )
+    stream = ( df_stream.writeStream
+                        .foreachBatch(upsertToDelta)
+                        .option("checkpointLocation", f"spark-warehouse/bronze.db/{TABLE_NAME}_checkpoint")
+                        .outputMode("update")
+                        .start()
+            )
 
-  '''
-  Processing in batch with stream
-  '''
-  stream.processAllAvailable()
-  stream.stop()
-  spark.stop()
+    '''
+    Processing in batch with stream
+    '''
+    stream.processAllAvailable()
+    stream.stop()
+spark.stop()
