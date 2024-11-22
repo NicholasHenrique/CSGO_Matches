@@ -1,41 +1,41 @@
-import findspark
-findspark.init()
-
 import delta
 import os
 from pyspark.sql.types import StructType, StructField, IntegerType, StringType, BooleanType, FloatType
-from pyspark.sql import SparkSession, window
+from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
-from os.path import abspath
+from pyspark.sql.functions import to_timestamp, regexp_replace
+from functools import partial
 
-def upsertToDelta(df, batchId):
-  '''
-  In order to guarantee there aren't any duplicated matches, a Window is used to filter matches based on its GameId and UpdatedUtc.
-  The GameId is used as a group by and UpdatedUtc is used as an order by.
-  If it's found a duplicated match, the duplicate will be not be saved.
-  '''
-  windowSpec = window.Window.partitionBy("GameId").orderBy(F.lit(1)) # .orderBy(F.lit(1)) .orderBy("UpdatedUtc")
-  df_new = df.withColumn("row_number", F.row_number().over(windowSpec)).filter("row_number = 1")
+def upsertToDelta(df, batchId, bronzeDeltaTable, table_name, on_fields):
+    '''
+    Upsert function to insert and update matches details. It also transforms tb_leaderboards' timestamp columns into valid formats.
+    '''
+    if table_name == "tb_leaderboards":
+        df = df.withColumn("Day", to_timestamp(regexp_replace("Day", 'T', ' '), 'yyyy-MM-dd HH:mm:ss')) \
+                .withColumn("DateTime", to_timestamp(regexp_replace("DateTime", 'T', ' '), 'yyyy-MM-dd HH:mm:ss')) \
+                .withColumn("Updated", to_timestamp(regexp_replace("Updated", 'T', ' '), 'yyyy-MM-dd HH:mm:ss')) \
+                .withColumn("UpdatedUtc", to_timestamp(regexp_replace("UpdatedUtc", 'T', ' '), 'yyyy-MM-dd HH:mm:ss'))
 
-  ( bronzeDeltaTable.alias("bronze")
-                    .merge(df_new.alias("raw"), "bronze.GameId = raw.GameId")
-                    .whenMatchedUpdateAll()
-                    .whenNotMatchedInsertAll()
-                    .execute()
-  )
+    join_condition = " and ".join([f"bronze.{field} = raw.{field}" for field in on_fields])
 
-warehouse_location = abspath('spark-warehouse').replace('c', 'C')
+    ( bronzeDeltaTable.alias("bronze")
+                      .merge(df.alias("raw"), join_condition)
+                      .whenMatchedUpdateAll()
+                      .whenNotMatchedInsertAll()
+                      .execute()
+    )
+
+warehouse_location = os.path.abspath('spark-warehouse')
 
 builder = SparkSession.builder \
     .master('local[*]') \
+    .config("spark.sql.warehouse.dir", warehouse_location) \
     .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    # .config("spark.sql.warehouse.dir", warehouse_location) \
+    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
+    .enableHiveSupport()
 
 spark = delta.configure_spark_with_delta_pip(builder) \
         .getOrCreate()
-
-# spark.conf.set("spark.local.dir", "/tmp/spark-temp")
 
 leaderboards_schema = StructType([
     StructField("PlayerId", IntegerType(), False),
@@ -90,43 +90,52 @@ SCHEMAS = {
   "tb_maps": map_schema
 }
 
-if "spark-warehouse" not in os.listdir():
-  spark.sql("CREATE DATABASE bronze")
+spark.sql("CREATE DATABASE IF NOT EXISTS bronze")
 
-try:
-  for TABLE_NAME in list(SCHEMAS.keys()):
+table_on_fields = {
+    "tb_leaderboards": ["PlayerId", "GameId", "MapName"], 
+    "tb_maps": ["Number", "GameId"]
+}
+
+for TABLE_NAME in list(SCHEMAS.keys()):
     '''
     Full load
     '''
     if TABLE_NAME not in os.listdir('spark-warehouse/bronze.db'):
-      df = spark.read.parquet(f"raw/{TABLE_NAME}")
-      windowSpec = window.Window.partitionBy("GameId").orderBy(F.lit(1)) # .orderBy(F.lit(1)) .orderBy("UpdatedUtc")
-      df_new = df.withColumn("row_number", F.row_number().over(windowSpec)).filter("row_number = 1").drop("row_number")
-      # df_new.write.mode("overwrite").format("delta").save(f"bronze.{TABLE_NAME}") # overwriting it's not overwrititng because it creates a different file name
-      df_new.write.mode("overwrite").format("delta").save(f"spark-warehouse/bronze.db/{TABLE_NAME}")
-      # df_new.write.mode("overwrite").format("delta").save(f"{warehouse_location}\\bronze.db\\{TABLE_NAME}")
-      # df_new.write.format("delta").saveAsTable(name=f"{warehouse_location}.bronze.{TABLE_NAME}", mode="overwrite")
-      # df_new.write.mode("overwrite").format("delta").saveAsTable(f"bronze.{TABLE_NAME}")
+        df = spark.read.schema(SCHEMAS[TABLE_NAME]).parquet(f"raw/{TABLE_NAME}")
+        '''
+        Transformation of tb_leaderboards' timestamp columns into valid formats.
+        '''
+        if TABLE_NAME == "tb_leaderboards":
+            df = df.withColumn("Day", to_timestamp(regexp_replace("Day", 'T', ' '), 'yyyy-MM-dd HH:mm:ss')) \
+                        .withColumn("DateTime", to_timestamp(regexp_replace("DateTime", 'T', ' '), 'yyyy-MM-dd HH:mm:ss')) \
+                        .withColumn("Updated", to_timestamp(regexp_replace("Updated", 'T', ' '), 'yyyy-MM-dd HH:mm:ss')) \
+                        .withColumn("UpdatedUtc", to_timestamp(regexp_replace("UpdatedUtc", 'T', ' '), 'yyyy-MM-dd HH:mm:ss'))
+        df.write.mode("overwrite").format("delta").saveAsTable(f"bronze.{TABLE_NAME}")
+    else:
+        bronzeDeltaTable = delta.tables.DeltaTable.forName(spark, f"bronze.{TABLE_NAME}")
 
-    bronzeDeltaTable = delta.tables.DeltaTable.forPath(spark, f"spark-warehouse/bronze.db/{TABLE_NAME}") #"bronze"
+        '''
+        When new matches land in raw, a stream is responsible for saving these new matches in bronze.
+        '''
+        df_stream = ( spark.readStream
+                            .format("parquet")
+                            .schema(SCHEMAS[TABLE_NAME])
+                            .load(f"raw/{TABLE_NAME}")
+                    )
 
-    '''
-    When new matches lands in raw, a stream is responsible for saving these new matches in bronze.
-    '''
-    df_stream = ( spark.readStream
-                      .format("parquet")
-                      .schema(SCHEMAS[TABLE_NAME])
-                      .load(f"raw/{TABLE_NAME}")
+        upsertToDeltaFunc = partial(upsertToDelta, bronzeDeltaTable=bronzeDeltaTable, table_name=TABLE_NAME, on_fields=table_on_fields[TABLE_NAME])
+
+        stream = ( df_stream.writeStream
+                            .foreachBatch(upsertToDeltaFunc)
+                            .option("checkpointLocation", f"spark-warehouse/bronze.db/{TABLE_NAME}_checkpoint")
+                            .outputMode("update")
+                            .start()
                 )
 
-    stream = ( df_stream.writeStream
-                        .foreachBatch(upsertToDelta)
-                        .option("checkpointLocation", f"spark-warehouse/bronze.db/{TABLE_NAME}_checkpoint")
-                        .outputMode("update")
-                        .start()
-            )
-
-    stream.processAllAvailable()
-    stream.stop()
-finally:
-  spark.stop()
+        '''
+        Processing in batch with stream
+        '''
+        stream.processAllAvailable()
+        stream.stop()
+spark.stop()

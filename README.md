@@ -1,12 +1,10 @@
 # CSGO Matches
 
-**Currently facing an [issue](#https://stackoverflow.com/questions/74514115/pyspark-not-finding-database-in-spark-warehouse) regarding spark-warehouse not being recognized when trying to save a new table within it. The problem happens when executing [match_details_stream.py][16].**
-
 Data Engineering project about CSGO matches.
 
-This project consists of using PySpark to collect official CSGO matches via [API][1]. These matches are stored in their original format in the [_raw_](#raw) layer and, later, manipulated and treated to be stored in the  [_bronze_](#bronze), _silver_ and _gold_ layers.
+This project consists of using PySpark to collect official CSGO matches via [API][1]. These matches are stored in their original format in the [_raw_](#raw) layer and, later, manipulated and treated to be stored in the  [_bronze_](#bronze), [_silver_](#silver) and _gold_ layers.
 
-**Code execution order:** [get_match_history.py][3] -> [match_stream.py][12] -> [get_match_details.py][6] -> [process_match_details.py][11] -> [match_details_stream.py][16]
+**Code execution order:** [get_match_history.py][3] -> [match_stream.py][12] -> [get_match_details.py][6] -> [process_match_details.py][11] -> [match_details_stream.py][16] -> [silver_ingestion.py][19]
 
 ## Raw
 
@@ -21,6 +19,12 @@ The [process_match_details.py][11] code collects matches id from [raw/matches_pr
 To garantee that in a table only exists distinct matches and the last version of them, the code [match_stream.py][12] utilizes a Spark Window function to filter duplicated matches from [raw/csgo_match_history][2] to [bronze/csgo_match_history][13]. Also, [match_stream.py][12] is responsible for keeping [raw/csgo_match_history][2] and [bronze/csgo_match_history][13] updated with the same matches through a Spark Stream. Similar happens with [match_details_stream.py][16], differs in that in this case it maintains [raw/tb_leaderboards][9] and [raw/tb_maps][10] in sync with [bronze/tb_leaderboards][17] and [bronze/tb_maps][18]. The codes [match_stream.py][12] and [match_details_stream.py][16] are also responsible for determinig the schemas of [bronze/tb_leaderboards][17] and [bronze/tb_maps][18].
 
 All tables in [bronze][14] are stored in [Delta][15] format.
+
+## Silver
+
+In silver layer, two SQL codes are responsible for populating the layer, [sql/fs_players.sql][20] calculates each player's statistics and [sql/fs_teams.sql][21] counts how many matches each team had on each map. [silver_ingestion.py][19] code creates [silver][22] database and performs upsert operations (insert and update) on [silver/fs_players][13] and [silver/fs_teams][13] tables.
+
+All tables in [silver][22] are stored in [Delta][15] format.
 
 [1]: https://sportsdata.io/developers/api-documentation/csgo
 [2]: #/raw/csgo_match_history/
@@ -40,3 +44,9 @@ All tables in [bronze][14] are stored in [Delta][15] format.
 [16]: #/match_details_stream.py
 [17]: #/spark-warehouse/bronze.db/tb_leaderboards/
 [18]: #/spark-warehouse/bronze.db/tb_maps/
+[19]: #/silver_ingestion.py
+[20]: #/sql/fs_players.sql
+[21]: #/sql/fs_teams.sql
+[22]: #/spark-warehouse/silver.db/
+[13]: #/spark-warehouse/silver.db/fs_players/
+[13]: #/spark-warehouse/silver.db/fs_teams/
