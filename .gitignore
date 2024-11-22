@@ -1,4 +1,11 @@
-__pycache__/
-api_key.py
 *.ipynb
 *.txt
+*.cmd
+
+api_key.py
+derby.log
+
+__pycache__/
+metastore_db/
+raw/
+spark-warehouse/
